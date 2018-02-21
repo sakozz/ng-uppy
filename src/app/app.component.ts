@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { IUppy, UppyFile } from 'uppy-store-ngrx';
 import * as Uppy from 'uppy/lib/core';
+import * as RestoreFiles from 'uppy/lib/plugins/GoldenRetriever';
 import * as Dashboard from 'uppy/lib/plugins/Dashboard';
 import * as GoogleDrive from 'uppy/lib/plugins/GoogleDrive';
 import * as Dropbox from 'uppy/lib/plugins/Dropbox';
@@ -21,9 +22,6 @@ export class AppComponent implements OnInit {
       debug        : true,
       autoProceed  : false,
       restrictions : {
-        maxFileSize      : 1000000,
-        maxNumberOfFiles : 3,
-        minNumberOfFiles : 2,
         allowedFileTypes : [ 'image/*', 'video/*' ]
       }
     })
@@ -47,7 +45,14 @@ export class AppComponent implements OnInit {
       .use(Dropbox, { target : Dashboard, host : 'https://server.uppy.io' })
       .use(Instagram, { target : Dashboard, host : 'https://server.uppy.io' })
       .use(Webcam, { target : Dashboard })
-      .use(Tus, { endpoint : 'https://master.tus.io/files/' })
+      .use(Tus, { endpoint : 'http://217.64.47.142/files/', resume : true })
+      .use(RestoreFiles, {
+        serviceWorker : true,
+        indexedDB     : {
+          maxFileSize  : 2 * 1024 * 1024 * 1024, // 2GB => Each file
+          maxTotalSize : 1024 * 1024 * 1024 * 1024 // 1 TB
+        }
+      })
       .run();
 
     this.uppy.on('complete', result => {
@@ -55,15 +60,26 @@ export class AppComponent implements OnInit {
       console.log('failed files:', result.failed);
     });
 
+    const isServiceWorkerControllerReady = new Promise(function (resolve) {
+      if (navigator.serviceWorker.controller) {
+        return resolve();
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', function (e) {
+        return resolve();
+      });
+    });
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/sw.js') // path to your bundled service worker with Golden Retriever service worker
-        .then((registration) => {
-          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        .register('/sw.bundle.js')
+        .then(function (registration) {
+          return isServiceWorkerControllerReady;
         })
-        .catch((error) => {
-          console.log('Registration failed with ' + error)
-        })
+        .then(function () {
+          // uppy.emit('core:file-sw-ready');
+        }).catch(function (error) {
+        console.log('Registration failed with ' + error)
+      });
     }
   }
 }
